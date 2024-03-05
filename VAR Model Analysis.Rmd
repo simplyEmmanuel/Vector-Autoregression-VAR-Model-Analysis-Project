@@ -1,0 +1,119 @@
+---
+title: "Vector Autoregression Model Analysis"
+author: "Emmanuel I., Nikita k., Sakshi H. "
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+
+# Setting up
+library(tseries)
+library(vars)
+library(readr)
+
+```
+
+```{r}
+
+# Reading the data in from our CSV. The data is originally downloaded from FRED (Federal Reserve Economic Data) website courtesy of the St. Louis fed. The data is on a monthly basis, and starts in January 1980.
+df = read_csv("projectdata.csv", show_col_types = FALSE)
+head(df)
+
+# We rename the columns to have more appropriate names
+colnames(df) = c("Date", "CPI", "UNEM", "FFR")
+
+# Formatting the data properly
+df$Date = as.Date(df$Date)
+df$CPI = as.numeric(df$CPI)
+df$UNEM = as.numeric(df$UNEM)
+df$FFR = as.numeric(df$FFR)
+
+```
+
+```{r}
+
+# We create the time series object
+range(df$Date)
+tsdata = ts(df[-1], start = c(1980,1), freq = 12)
+
+# What we really want to understand is how much the changes in unemployment and federal funds rate can effect change in CPI. So we need to create new variables which capture the month to month change in CPI and unemployment
+
+cpi = tsdata[,1]
+unem = tsdata[,2]
+ffr = tsdata[,3]
+
+cpigrowth = c(NA, diff(cpi) / lag(cpi, -1) * 100)
+unemgrowth = c(NA, diff(unem))
+ffrgrowth = c(NA, diff(ffr))
+
+temp = ts(cbind(cpigrowth, unemgrowth, ffrgrowth), start = c(1980,1), freq = 12)
+newtsdata = cbind(temp, tsdata)
+newtsdata = na.omit(newtsdata)
+
+# New variables that hold the newly created time series
+cpidiff = newtsdata[,1]
+unemdiff = newtsdata[,2]
+ffrdiff = newtsdata[,3]
+
+# Plots of each time series
+ts.plot(cpidiff)
+ts.plot(unemdiff)
+ts.plot(ffrdiff)
+
+```
+
+
+
+```{r}
+# VAR Model
+model = VAR(cbind(cpidiff,unemdiff,ffrdiff), p = 4, type = "trend")
+
+```
+
+```{r}
+# Response functions which show how the given variable reactions to a change in the other
+plot(irf(model, response="cpidiff", boot=T, nsteps = 4))
+plot(irf(model, response="unemdiff", boot=T, nsteps = 4))
+plot(irf(model, response="ffrdiff", boot=T, nsteps = 4))
+
+```
+
+```{r}
+# Plots of autocorrelation and partial autocorrelation plots for the residuals
+cpi.resid = resid(model)[,1]
+unem.resid = resid(model)[,2]
+ffr.resid = resid(model)[,3]
+
+acf(cpi.resid)
+pacf(cpi.resid)
+
+acf(unem.resid)
+pacf(unem.resid)
+
+acf(ffr.resid)
+pacf(ffr.resid)
+
+```
+
+```{r}
+
+# We use the model to predict 3 months ahead
+VAR.pred = predict(model, n.ahead = 3)
+VAR.pred 
+
+# Pulling out the change in CPI predictions
+cpi.pred = ts(VAR.pred$fcst$cpidiff[,1], start = c(2024,1), freq = 12)
+cpi.pred
+
+# Plotting the predicted CPI values. We only plot since 2018 so its easier to make out the predictions
+cpi.plot = window(cpidiff, start = c(2018,1), freq = 12)
+ts.plot(cbind(cpi.plot, cpi.pred), lty = 1:2,col=c("blue","red"))
+
+# Model suggests inflation should remain relatively stable in next few months, which is generally a good thing.
+
+```
